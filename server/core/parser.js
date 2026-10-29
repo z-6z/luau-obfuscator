@@ -218,45 +218,27 @@ class Parser {
   }
 
   parseExpr() {
-    let left = this.parseSimpleExp();
-    while (true) {
-      const t = this.peek().t;
-
-      if (t === "^") {
-        this.next();
-        const right = this.parseExpr();
-        left = { kind: "Binop", op: "^", left, right, line: this.peek().line };
-        continue;
-      }
-
-      if (t === "or" || t === "and") {
-        this.next();
-        const right = this.parseExpr();
-        left = { kind: "Logical", op: t, left, right, line: this.peek().line };
-        continue;
-      }
-
-      const prec = BINPREC[t];
-      if (prec) {
-        this.next();
-        const right = this.parseBinopRhs(prec);
-        left = { kind: "Binop", op: t, left, right, line: this.peek().line };
-        continue;
-      }
-      break;
-    }
-    return left;
+    return this.parsePrec(0);
   }
 
-  parseBinopRhs(limit) {
+  parsePrec(limit) {
     let left = this.parseSimpleExp();
     while (true) {
       const t = this.peek().t;
-      const prec = BINPREC[t];
-      if (!prec || prec <= limit) break;
+      let prec = 0;
+      let rightAssoc = false;
+      if (t === "^") { prec = 10; rightAssoc = true; }
+      else if (t === "or") prec = 1;
+      else if (t === "and") prec = 2;
+      else prec = BINPREC[t] || 0;
+      if (prec <= limit) break;
       this.next();
-      const right = this.parseBinopRhs(prec);
-      left = { kind: "Binop", op: t, left, right, line: this.peek().line };
+      const right = rightAssoc ? this.parsePrec(9) : this.parsePrec(prec);
+      if (t === "and" || t === "or") {
+        left = { kind: "Logical", op: t, left, right, line: this.peek().line };
+      } else {
+        left = { kind: "Binop", op: t, left, right, line: this.peek().line };
+      }
     }
     return left;
   }
@@ -270,9 +252,9 @@ class Parser {
       case "true":   this.next(); return { kind: "Boolean", v: true, line: tk.line };
       case "false":  this.next(); return { kind: "Boolean", v: false, line: tk.line };
       case "...":    this.next(); return { kind: "Vararg", line: tk.line };
-      case "not": this.next(); return { kind: "Unop", op: "not", e: this.parseSimpleExp(), line: tk.line };
-      case "-":   this.next(); return { kind: "Unop", op: "-",   e: this.parseSimpleExp(), line: tk.line };
-      case "#":   this.next(); return { kind: "Unop", op: "#",   e: this.parseSimpleExp(), line: tk.line };
+      case "not": this.next(); return { kind: "Unop", op: "not", e: this.parsePrec(9), line: tk.line };
+      case "-":   this.next(); return { kind: "Unop", op: "-",   e: this.parsePrec(9), line: tk.line };
+      case "#":   this.next(); return { kind: "Unop", op: "#",   e: this.parsePrec(9), line: tk.line };
       case "{":   return this.parseTable();
       case "function": {
         this.next();
